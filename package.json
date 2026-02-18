@@ -1,0 +1,24 @@
+{
+  "name": "claude-usage-statusbar",
+  "displayName": "Claude Usage Status Bar",
+  "description": "Shows Claude Code API usage (5h session / 7d weekly) in the VS Code status bar",
+  "publisher": "syzwatch",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": { "vscode": "^1.70.0" },
+  "categories": [],
+  "activationEvents": ["*"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeUsage.refresh",
+        "title": "Claude Usage: Refresh Now"
+      },
+      {
+        "command": "claudeUsage.showPanel",
+        "title": "Claude Usage: Manage Accounts"
+      }
+    ]
+  }
+}
