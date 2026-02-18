@@ -188,9 +188,17 @@ async function switchToAccount(targetNum) {
 
   const configPath = getConfigPath();
   const currentEmail = getCurrentEmail();
-  const currentNum = String(data.activeAccountNumber);
 
-  if (currentEmail) {
+  // Find the actual active account by email (activeAccountNumber may be stale
+  // if the user switched accounts via CLI outside the extension)
+  let currentNum = String(data.activeAccountNumber);
+  const expectedEmail = data.accounts[currentNum]?.email;
+  if (currentEmail && expectedEmail && currentEmail !== expectedEmail) {
+    const match = Object.entries(data.accounts).find(([, a]) => a.email === currentEmail);
+    if (match) currentNum = match[0];
+  }
+
+  if (currentEmail && data.accounts[currentNum]?.email === currentEmail) {
     const cc = readCurrentCredentials();
     const cf = fs.readFileSync(configPath, "utf8");
     if (cc) writeBackupCreds(currentNum, currentEmail, cc);
@@ -206,6 +214,12 @@ async function switchToAccount(targetNum) {
   const tfData = JSON.parse(tf);
   const oauth = tfData.oauthAccount;
   if (!oauth) throw new Error("Invalid backup config: missing oauthAccount");
+
+  // Ensure the restored oauthAccount has the correct email for this account
+  // (backup config may have been corrupted by external CLI switches)
+  if (oauth.emailAddress !== tInfo.email) {
+    oauth.emailAddress = tInfo.email;
+  }
 
   const currentCfg = readJSON(configPath) || {};
   currentCfg.oauthAccount = oauth;
@@ -355,11 +369,12 @@ async function refreshAll() {
   const rows = [];
 
   if (seqData && seqData.accounts) {
+    const activeNum = seqData.activeAccountNumber;
     await Promise.all((seqData.sequence || []).map(async num => {
       const info = seqData.accounts[String(num)];
       if (!info) return;
       const { email } = info;
-      const isActive = email === currentEmail;
+      const isActive = num === activeNum;
       const credsText = isActive
         ? readCurrentCredentials()
         : readBackupCreds(String(num), email);
