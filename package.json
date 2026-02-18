@@ -16,8 +16,12 @@
         "title": "Claude Usage: Refresh Now"
       },
       {
-        "command": "claudeUsage.showPanel",
-        "title": "Claude Usage: Manage Accounts"
+        "command": "claudeUsage.switchTo",
+        "title": "Claude Usage: Switch Account"
+      },
+      {
+        "command": "claudeUsage.saveAccount",
+        "title": "Claude Usage: Save Current Account"
       }
     ]
   }

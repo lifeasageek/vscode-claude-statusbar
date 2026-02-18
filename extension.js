@@ -17,9 +17,8 @@ const CREDENTIALS_DIR = path.join(SWAP_DIR, "credentials");
 
 let statusBarItem;
 let timer;
-let panel = null;
 
-// ─── File helpers ───────────────────────────────────────────────────────────
+// ─── File helpers ────────────────────────────────────────────────────────────
 
 function readJSON(filePath) {
   try { return JSON.parse(fs.readFileSync(filePath, "utf8")); }
@@ -37,7 +36,7 @@ function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
-// ─── Credential helpers ─────────────────────────────────────────────────────
+// ─── Credential helpers ──────────────────────────────────────────────────────
 
 function readCurrentCredentials() {
   try { return fs.readFileSync(CREDS_FILE, "utf8"); }
@@ -85,7 +84,7 @@ function writeBackupConfig(num, email, text) {
   try { fs.chmodSync(file, 0o600); } catch {}
 }
 
-// ─── Claude config helpers ──────────────────────────────────────────────────
+// ─── Claude config helpers ───────────────────────────────────────────────────
 
 function getConfigPath() {
   const d = readJSON(CLAUDE_CONFIG_PRIMARY);
@@ -96,7 +95,7 @@ function getCurrentEmail() {
   return readJSON(getConfigPath())?.oauthAccount?.emailAddress || null;
 }
 
-// ─── Sequence file helpers ──────────────────────────────────────────────────
+// ─── Sequence helpers ────────────────────────────────────────────────────────
 
 function getTimestamp() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -126,7 +125,7 @@ function nextNum(data) {
   return nums.length ? Math.max(...nums) + 1 : 1;
 }
 
-// ─── API helpers ────────────────────────────────────────────────────────────
+// ─── API helpers ─────────────────────────────────────────────────────────────
 
 function apiGet(token, url) {
   return new Promise(resolve => {
@@ -150,7 +149,7 @@ function fetchUsage(token) {
   return apiGet(token, "https://api.anthropic.com/api/oauth/usage");
 }
 
-// ─── Account management ─────────────────────────────────────────────────────
+// ─── Account management ──────────────────────────────────────────────────────
 
 async function saveCurrentAccount() {
   initSequenceFile();
@@ -191,7 +190,6 @@ async function switchToAccount(targetNum) {
   const currentEmail = getCurrentEmail();
   const currentNum = String(data.activeAccountNumber);
 
-  // Backup current account before switching
   if (currentEmail) {
     const cc = readCurrentCredentials();
     const cf = fs.readFileSync(configPath, "utf8");
@@ -199,7 +197,6 @@ async function switchToAccount(targetNum) {
     writeBackupConfig(currentNum, currentEmail, cf);
   }
 
-  // Restore target credentials and config
   const tc = readBackupCreds(tStr, tInfo.email);
   const tf = readBackupConfig(tStr, tInfo.email);
   if (!tc || !tf) throw new Error(`Missing backup data for Account-${targetNum}`);
@@ -219,29 +216,7 @@ async function switchToAccount(targetNum) {
   writeJSON(SEQUENCE_FILE, data);
 }
 
-// ─── Status bar ─────────────────────────────────────────────────────────────
-
-async function refreshStatus() {
-  const ct = readCurrentCredentials();
-  const token = ct ? getToken(ct) : null;
-  if (!token) {
-    statusBarItem.text = "$(cloud) --";
-    statusBarItem.tooltip = "Not logged in to Claude";
-    return;
-  }
-  const usage = await fetchUsage(token);
-  if (!usage) {
-    statusBarItem.text = "$(cloud) --";
-    statusBarItem.tooltip = "Failed to fetch usage";
-    return;
-  }
-  const h5 = usage.five_hour?.utilization ?? 0;
-  const d7 = usage.seven_day?.utilization ?? 0;
-  statusBarItem.text = `$(cloud) 5h ${Math.round(h5)}% 7d ${Math.round(d7)}%`;
-  statusBarItem.tooltip = "Click to manage Claude accounts";
-}
-
-// ─── Webview helpers ─────────────────────────────────────────────────────────
+// ─── Tooltip builder ─────────────────────────────────────────────────────────
 
 function timeUntil(iso) {
   if (!iso) return "?";
@@ -255,95 +230,126 @@ function timeUntil(iso) {
 }
 
 function barColor(p) {
-  return p >= 90 ? "#e45649" : p >= 70 ? "#e5a11c" : "#50a14f";
+  return p >= 90 ? "#e45649" : p >= 80 ? "#e5a11c" : "#50a14f";
 }
 
-function esc(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+function barTrack() { return "rgba(127,127,127,0.18)"; }
 
-function usageRow(label, pct, resetsAt) {
+function usageRowHtml(label, pct, resetsAt) {
   const c = pct !== null ? barColor(pct) : "#888";
-  const w = pct !== null ? Math.min(pct, 100) : 0;
-  const txt = pct !== null ? pct + "%" : "?";
-  return `<div class="urow">
-    <span class="lbl">${label}</span>
-    <div class="bar-track"><div class="bar-fill" style="width:${w}%;background:${c}"></div></div>
-    <span class="pct" style="color:${c}">${txt}</span>
-    <span class="rst">&#8635; ${timeUntil(resetsAt)}</span>
-  </div>`;
+  const p = pct !== null ? Math.min(Math.round(pct), 100) : 0;
+  const txt = pct !== null ? Math.round(pct) + "%" : "?";
+  return `<tr>`
+    + `<td style="padding:2px 6px 2px 16px;white-space:nowrap;opacity:0.7;font-size:0.9em">${label}</td>`
+    + `<td style="padding:2px 0;width:120px">`
+    +   `<div style="background:${barTrack()};border-radius:4px;height:6px;width:120px">`
+    +     `<div style="background:${c};height:100%;width:${p}%;border-radius:4px"></div>`
+    +   `</div>`
+    + `</td>`
+    + `<td style="padding:2px 6px;white-space:nowrap;font-weight:600;color:${c};text-align:right;font-size:0.9em">${txt}</td>`
+    + `<td style="padding:2px 0;white-space:nowrap;opacity:0.5;font-size:0.85em">\u21bb ${timeUntil(resetsAt)}</td>`
+    + `</tr>`;
 }
 
-function buildHtml(accounts, currentEmail, currentSaved) {
-  const cards = accounts.map(({ num, email, isActive, usage }) => {
-    const h5 = usage?.five_hour?.utilization ?? null;
-    const d7 = usage?.seven_day?.utilization ?? null;
-    const p5 = h5 !== null ? Math.round(h5) : null;
-    const p7 = d7 !== null ? Math.round(d7) : null;
-    const action = !isActive
-      ? `<button class="btn-switch" onclick="switchTo(${num})">Switch</button>`
-      : `<span class="badge">active</span>`;
-    return `<div class="card ${isActive ? "card-active" : ""}">
-  <div class="card-hdr">
-    <span class="email">${esc(email)}</span>
-    ${action}
-  </div>
-  ${usageRow("5h", p5, usage?.five_hour?.resets_at)}
-  ${usageRow("7d", p7, usage?.seven_day?.resets_at)}
-</div>`;
-  }).join("");
-
-  const saveBanner = (currentEmail && !currentSaved) ? `<div class="banner">
-  <span>Current account <strong>${esc(currentEmail)}</strong> is not saved</span>
-  <button class="btn-save" onclick="saveAccount()">Save Account</button>
-</div>` : "";
-
-  const emptyNote = accounts.length === 0
-    ? `<p class="empty">No managed accounts yet.</p>` : "";
-
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-<style>
-*{box-sizing:border-box}
-body{font-family:var(--vscode-font-family,sans-serif);font-size:13px;color:var(--vscode-foreground);background:var(--vscode-editor-background);padding:14px 16px;margin:0}
-h2{font-size:14px;font-weight:600;margin:0 0 12px}
-.banner{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--vscode-inputValidation-warningBackground,rgba(200,150,0,.12));border:1px solid var(--vscode-inputValidation-warningBorder,rgba(200,150,0,.4));border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px}
-.btn-save{padding:3px 10px;font-size:12px;cursor:pointer;border:none;border-radius:4px;background:var(--vscode-button-background,#0078d4);color:var(--vscode-button-foreground,#fff);white-space:nowrap}
-.btn-save:hover{background:var(--vscode-button-hoverBackground,#026ec1)}
-.btn-switch{padding:3px 10px;font-size:12px;cursor:pointer;border:none;border-radius:4px;background:var(--vscode-button-secondaryBackground,rgba(127,127,127,.18));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));white-space:nowrap}
-.btn-switch:hover{background:var(--vscode-button-secondaryHoverBackground,rgba(127,127,127,.28))}
-.card{border:1px solid var(--vscode-widget-border,rgba(127,127,127,.2));border-radius:7px;padding:10px 12px;margin-bottom:8px}
-.card-active{border-color:var(--vscode-focusBorder,#0078d4);background:rgba(0,120,212,.05)}
-.card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px}
-.badge{font-size:10px;background:var(--vscode-focusBorder,#0078d4);color:#fff;padding:2px 7px;border-radius:10px;white-space:nowrap}
-.email{font-weight:600;font-size:12px;word-break:break-all}
-.urow{display:flex;align-items:center;gap:7px;margin-bottom:3px}
-.lbl{font-size:11px;opacity:.6;width:16px;text-align:right;flex-shrink:0}
-.bar-track{flex:1;height:6px;border-radius:3px;background:rgba(127,127,127,.18);overflow:hidden;min-width:80px}
-.bar-fill{height:100%;border-radius:3px}
-.pct{font-size:11px;font-weight:600;width:30px;text-align:right;flex-shrink:0}
-.rst{font-size:10px;opacity:.5;width:54px;flex-shrink:0}
-.empty{opacity:.5;font-style:italic;font-size:12px;padding:4px 0}
-</style></head><body>
-<h2>&#9729; Claude Accounts</h2>
-${saveBanner}
-${cards}
-${emptyNote}
-<script>
-const vscode = acquireVsCodeApi();
-function switchTo(n) { vscode.postMessage({ command: "switch", num: n }); }
-function saveAccount() { vscode.postMessage({ command: "save" }); }
-</script>
-</body></html>`;
+function cmdUri(command, args) {
+  return `command:${command}?${encodeURIComponent(JSON.stringify(args))}`;
 }
 
-// ─── Panel data gathering ────────────────────────────────────────────────────
+function accountBlockHtml(num, email, isActive, usage) {
+  const h5 = usage?.five_hour?.utilization ?? null;
+  const d7 = usage?.seven_day?.utilization ?? null;
+  const p5 = h5 !== null ? Math.round(h5) : null;
+  const p7 = d7 !== null ? Math.round(d7) : null;
 
-async function gatherPanelData() {
+  const borderLeft = isActive
+    ? `border-left:3px solid #0078d4;`
+    : `border-left:3px solid rgba(127,127,127,0.25);`;
+
+  const emailColor = isActive
+    ? `color:#4da3ff;font-weight:700;font-size:0.95em`
+    : `opacity:0.8;font-weight:600;font-size:0.95em`;
+
+  const actionLine = isActive
+    ? `<div style="font-size:0.78em;margin-top:3px;color:#4da3ff;opacity:0.8">&#10003; active</div>`
+    : `<div style="font-size:0.78em;margin-top:3px">`
+      + `<a href="${cmdUri("claudeUsage.switchTo", [num])}" style="opacity:0.65">Switch to this account</a>`
+      + `</div>`;
+
+  let block = `<div style="margin-bottom:8px;border-radius:5px;overflow:hidden;${borderLeft}">`;
+
+  // Header: email on its own line, action label below
+  block += `<div style="padding:5px 10px 5px 8px;`
+    + (isActive ? `background:rgba(0,120,212,0.13)` : `background:rgba(127,127,127,0.07)`)
+    + `">`
+    + `<div style="${emailColor}">${email}</div>`
+    + actionLine
+    + `</div>`;
+
+  // Usage bars
+  block += `<div style="padding:4px 8px 5px 8px">`;
+  block += `<table style="border-collapse:collapse;width:100%">`;
+  block += usageRowHtml("5h", p5, usage?.five_hour?.resets_at);
+  block += usageRowHtml("7d", p7, usage?.seven_day?.resets_at);
+  block += `</table></div>`;
+
+  block += `</div>`;
+  return block;
+}
+
+function buildTooltip(accounts, currentEmail, currentSaved) {
+  const tip = new vscode.MarkdownString();
+  tip.isTrusted = true;
+  tip.supportHtml = true;
+  tip.supportThemeIcons = true;
+
+  const divider = `<div style="font-size:0.82em;opacity:0.3;letter-spacing:2px;margin:6px 0">──────────────────────</div>`;
+
+  let html = `<div style="padding:2px 0 4px 0"><strong>$(cloud) Claude Accounts</strong></div>`;
+  html += divider;
+
+  // Save banner
+  if (currentEmail && !currentSaved) {
+    const uri = cmdUri("claudeUsage.saveAccount", []);
+    html += `<div style="margin-bottom:8px;padding:5px 8px;border-radius:5px;`
+      + `background:rgba(200,150,0,0.12);border:1px solid rgba(200,150,0,0.35);font-size:0.9em">`
+      + `Current account not saved &nbsp;<a href="${uri}"><strong>Save Account</strong></a>`
+      + `</div>`;
+  }
+
+  if (accounts.length === 0) {
+    html += `<div style="opacity:0.5;font-style:italic;font-size:0.9em">No managed accounts yet.</div>`;
+  }
+
+  // Active account first, then others with a divider
+  const active = accounts.filter(a => a.isActive);
+  const others = accounts.filter(a => !a.isActive);
+
+  for (const { num, email, isActive, usage } of active) {
+    html += accountBlockHtml(num, email, isActive, usage);
+  }
+
+  if (active.length > 0 && others.length > 0) {
+    html += `<div style="font-size:0.82em;opacity:0.3;letter-spacing:2px;margin:8px 0">──────────────────────</div>`;
+  }
+
+  for (const { num, email, isActive, usage } of others) {
+    html += accountBlockHtml(num, email, isActive, usage);
+  }
+
+  html += divider;
+
+  // Refresh link at bottom
+  html += `<div style="opacity:0.4;font-size:0.82em">`
+    + `<a href="${cmdUri("claudeUsage.refresh", [])}">$(refresh) Refresh</a>`
+    + `</div>`;
+
+  tip.appendMarkdown(html);
+  return tip;
+}
+
+// ─── Main refresh ────────────────────────────────────────────────────────────
+
+async function refreshAll() {
   const currentEmail = getCurrentEmail();
   const seqData = getSeqData();
   const rows = [];
@@ -361,94 +367,87 @@ async function gatherPanelData() {
       const usage = token ? await fetchUsage(token) : null;
       rows.push({ num, email, isActive, usage });
     }));
-    // Restore sequence order (Promise.all may resolve out of order)
     const seq = seqData.sequence || [];
     rows.sort((a, b) => seq.indexOf(a.num) - seq.indexOf(b.num));
   }
 
-  return {
-    accounts: rows,
-    currentEmail,
-    currentSaved: isSaved(seqData, currentEmail)
-  };
-}
+  const currentSaved = isSaved(seqData, currentEmail);
 
-// ─── Webview panel lifecycle ─────────────────────────────────────────────────
+  // Update status bar text from current user's usage
+  const current = rows.find(r => r.isActive);
+  const h5 = current?.usage?.five_hour?.utilization ?? null;
+  const d7 = current?.usage?.seven_day?.utilization ?? null;
 
-function loadingHtml() {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
-<style>body{font-family:var(--vscode-font-family,sans-serif);padding:20px;color:var(--vscode-foreground);background:var(--vscode-editor-background)}</style>
-</head><body><p>Loading accounts&hellip;</p></body></html>`;
-}
-
-async function reloadPanel() {
-  if (!panel) return;
-  panel.webview.html = loadingHtml();
-  const d = await gatherPanelData();
-  if (panel) panel.webview.html = buildHtml(d.accounts, d.currentEmail, d.currentSaved);
-}
-
-async function openAccountPanel(ctx) {
-  if (!panel) {
-    panel = vscode.window.createWebviewPanel(
-      "claudeAccounts",
-      "Claude Accounts",
-      vscode.ViewColumn.Beside,
-      { enableScripts: true }
-    );
-    panel.onDidDispose(() => { panel = null; }, null, ctx.subscriptions);
-    panel.webview.onDidReceiveMessage(async msg => {
-      if (msg.command === "switch") {
-        try {
-          await switchToAccount(msg.num);
-          vscode.window.showInformationMessage(
-            `Switched to Account-${msg.num}. Restart Claude Code to apply.`
-          );
-          refreshStatus();
-          await reloadPanel();
-        } catch (e) {
-          vscode.window.showErrorMessage(`Switch failed: ${e.message}`);
-        }
-      } else if (msg.command === "save") {
-        try {
-          const n = await saveCurrentAccount();
-          vscode.window.showInformationMessage(`Account saved as Account-${n}.`);
-          await reloadPanel();
-        } catch (e) {
-          vscode.window.showErrorMessage(`Save failed: ${e.message}`);
-        }
+  if (h5 === null && d7 === null) {
+    // No managed accounts yet — fall back to fetching current user directly
+    const ct = readCurrentCredentials();
+    const token = ct ? getToken(ct) : null;
+    if (token) {
+      const usage = await fetchUsage(token);
+      if (usage) {
+        const fh = usage.five_hour?.utilization ?? 0;
+        const sd = usage.seven_day?.utilization ?? 0;
+        statusBarItem.text = `$(cloud) 5h ${Math.round(fh)}% 7d ${Math.round(sd)}%`;
+        // Build a minimal tooltip for unsaved user
+        const singleRow = [{
+          num: 0,
+          email: currentEmail || "unknown",
+          isActive: true,
+          usage
+        }];
+        statusBarItem.tooltip = buildTooltip(singleRow, currentEmail, currentSaved);
+        return;
       }
-    }, null, ctx.subscriptions);
-  } else {
-    panel.reveal(vscode.ViewColumn.Beside);
+    }
+    statusBarItem.text = "$(cloud) --";
+    statusBarItem.tooltip = buildTooltip([], currentEmail, currentSaved);
+    return;
   }
 
-  await reloadPanel();
+  statusBarItem.text = `$(cloud) 5h ${h5 !== null ? Math.round(h5) : "--"}% 7d ${d7 !== null ? Math.round(d7) : "--"}%`;
+  statusBarItem.tooltip = buildTooltip(rows, currentEmail, currentSaved);
 }
 
-// ─── Extension lifecycle ─────────────────────────────────────────────────────
+// ─── Extension lifecycle ──────────────────────────────────────────────────────
 
 function activate(context) {
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 50);
-  statusBarItem.command = "claudeUsage.showPanel";
+  statusBarItem.command = "claudeUsage.refresh";
   statusBarItem.text = "$(cloud) ...";
   statusBarItem.show();
 
   context.subscriptions.push(
     statusBarItem,
-    vscode.commands.registerCommand("claudeUsage.refresh", refreshStatus),
-    vscode.commands.registerCommand("claudeUsage.showPanel", () => openAccountPanel(context)),
+    vscode.commands.registerCommand("claudeUsage.refresh", () => refreshAll()),
+    vscode.commands.registerCommand("claudeUsage.switchTo", async (num) => {
+      try {
+        await switchToAccount(num);
+        vscode.window.showInformationMessage(
+          `Switched to Account-${num}. Restart Claude Code to apply.`
+        );
+        await refreshAll();
+      } catch (e) {
+        vscode.window.showErrorMessage(`Switch failed: ${e.message}`);
+      }
+    }),
+    vscode.commands.registerCommand("claudeUsage.saveAccount", async () => {
+      try {
+        const n = await saveCurrentAccount();
+        vscode.window.showInformationMessage(`Account saved as Account-${n}.`);
+        await refreshAll();
+      } catch (e) {
+        vscode.window.showErrorMessage(`Save failed: ${e.message}`);
+      }
+    }),
     { dispose: () => clearInterval(timer) }
   );
 
-  refreshStatus();
-  timer = setInterval(refreshStatus, POLL_MS);
+  refreshAll();
+  timer = setInterval(refreshAll, POLL_MS);
 }
 
 function deactivate() {
   if (timer) clearInterval(timer);
-  if (panel) { panel.dispose(); panel = null; }
 }
 
 module.exports = { activate, deactivate };
